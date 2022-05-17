@@ -112,7 +112,7 @@ class ElectronLensInterpolated(xt.BeamElement):
             flat_slice = phi_slice.transpose(1,0,2).flatten()
             len_slice = len(flat_slice)
             index_offset = 8 * nx * ny * iz
-            tc_fieldmap._phi_taylor[index_offset:index_offset+len_slice] = flat_slice
+            tc_fieldmap._phi_taylor[index_offset:index_offset+len_slice] = _context.nplike_lib.asarray(flat_slice)
         ##############################################################################
 
         self.xoinitialize(
