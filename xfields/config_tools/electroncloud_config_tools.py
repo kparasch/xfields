@@ -69,7 +69,7 @@ def get_electroncloud_fieldmap_from_h5(
         len_slice = phi_slice.shape[0] * \
             phi_slice.shape[1] * phi_slice.shape[2]
         fieldmap._phi_taylor[index_offset:index_offset +
-                             len_slice] = phi_slice.flatten()
+                             len_slice] = buffer.context.nplike_lib.asarray(phi_slice.flatten())
     ##########################################################################
     # for iz in range(iz1, iz2):
     #     if (iz-iz1)/nz > kk:
