@@ -4,6 +4,7 @@ import h5py
 import xfields as xf
 import xpart as xp
 import xtrack as xt
+import xobjects as xo
 
 
 def get_electroncloud_fieldmap_from_h5(
@@ -145,12 +146,13 @@ def electroncloud_dipolar_kicks_of_fieldmap(fieldmap=None, p0c=None):
     assert p0c is not None
     assert fieldmap is not None
 
-    part = xp.Particles(p0c=p0c)
     ecloud = xf.ElectronCloud(
         length=1,
         fieldmap=fieldmap,
         _buffer=fieldmap._buffer)
+    part = xp.Particles(p0c=p0c, _context=ecloud.fieldmap._buffer.context)
     ecloud.track(part)
+    part._move_to(_context=xo.ContextCpu())
     px = part.px[0]
     py = part.py[0]
     ptau = part.ptau[0]
