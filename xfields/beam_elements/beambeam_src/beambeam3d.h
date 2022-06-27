@@ -1,3 +1,8 @@
+// copyright ################################# //
+// This file is part of the Xfields Package.   //
+// Copyright (c) CERN, 2021.                   //
+// ########################################### //
+
 #ifndef XFIELDS_BEAMBEAM3D_H
 #define XFIELDS_BEAMBEAM3D_H
 
@@ -375,7 +380,7 @@ void BeamBeamBiGaussian3D_track_local_particle(BeamBeamBiGaussian3DData el,
     	double y = LocalParticle_get_y(part);
     	double py = LocalParticle_get_py(part);
     	double zeta = LocalParticle_get_zeta(part);
-    	double delta = LocalParticle_get_delta(part);
+    	double pzeta = LocalParticle_get_pzeta(part);
 
     	const double q0 = LocalParticle_get_q0(part); 
     	const double p0c = LocalParticle_get_p0c(part); // eV
@@ -388,12 +393,13 @@ void BeamBeamBiGaussian3D_track_local_particle(BeamBeamBiGaussian3DData el,
     	double y_star =     y     - y_CO    - delta_y;
     	double py_star =    py    - py_CO;
     	double sigma_star = zeta  - sigma_CO;
-    	double delta_star = delta - delta_CO;
+    	double pzeta_star = pzeta - delta_CO; // TODO: could be fixed, in any case we assume beta=beta0=1
+	                                      //       in the synchrobeam
 
     	// Boost coordinates of the weak beam
 	BoostParameters_boost_coordinates(bpar,
     	    &x_star, &px_star, &y_star, &py_star,
-    	    &sigma_star, &delta_star);
+    	    &sigma_star, &pzeta_star);
 
     	//printf("x_star=%.10e\n", x_star);
 	//printf("px_star=%.10e\n", px_star);
@@ -482,10 +488,10 @@ void BeamBeamBiGaussian3D_track_local_particle(BeamBeamBiGaussian3DData el,
     	                   Gx_hat_star*dS_Sig_11_hat_star + Gy_hat_star*dS_Sig_33_hat_star);
 
     	    // Apply the kicks (Hirata's synchro-beam)
-    	    delta_star = delta_star + Fz_star+0.5*(
+    	    pzeta_star = pzeta_star + Fz_star+0.5*(
     	                Fx_star*(px_star+0.5*Fx_star)+
     	                Fy_star*(py_star+0.5*Fy_star));
-	    //printf("delta_star=%.10f\n", delta_star);
+	    //printf("pzeta_star=%.10f\n", pzeta_star);
     	    x_star = x_star - S*Fx_star;
     	    px_star = px_star + Fx_star;
     	    y_star = y_star - S*Fy_star;
@@ -496,9 +502,9 @@ void BeamBeamBiGaussian3D_track_local_particle(BeamBeamBiGaussian3DData el,
     	// Inverse boost on the coordinates of the weak beam
 	BoostParameters_boost_coordinates_inv(bpar,
     	    &x_star, &px_star, &y_star, &py_star,
-    	    &sigma_star, &delta_star);
+    	    &sigma_star, &pzeta_star);
 
-	//printf("delta_ret=%.10e\n", delta_star);
+	//printf("pzeta_ret=%.10e\n", pzeta_star);
 
     	// Go back to original reference frame and remove dipolar effect
     	x =     x_star     + x_CO   + delta_x - Dx_sub;
@@ -506,7 +512,7 @@ void BeamBeamBiGaussian3D_track_local_particle(BeamBeamBiGaussian3DData el,
     	y =     y_star     + y_CO   + delta_y - Dy_sub;
     	py =    py_star    + py_CO            - Dpy_sub;
     	zeta =  sigma_star + sigma_CO         - Dsigma_sub;
-    	delta = delta_star + delta_CO         - Ddelta_sub;
+    	pzeta = pzeta_star + delta_CO         - Ddelta_sub;
 
 
     	LocalParticle_set_x(part, x);
@@ -514,7 +520,7 @@ void BeamBeamBiGaussian3D_track_local_particle(BeamBeamBiGaussian3DData el,
     	LocalParticle_set_y(part, y);
     	LocalParticle_set_py(part, py);
     	LocalParticle_set_zeta(part, zeta);
-    	LocalParticle_update_delta(part, delta);
+    	LocalParticle_update_pzeta(part, pzeta);
 	
     //end_per_particle_block
 

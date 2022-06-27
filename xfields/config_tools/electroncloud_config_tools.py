@@ -1,5 +1,9 @@
+# copyright ################################# #
+# This file is part of the Xfields Package.   #
+# Copyright (c) CERN, 2021.                   #
+# ########################################### #
+
 import numpy as np
-import h5py
 
 import xfields as xf
 import xpart as xp
@@ -10,6 +14,7 @@ import xobjects as xo
 def get_electroncloud_fieldmap_from_h5(
         filename, tau_max=None, buffer=None, ecloud_name="e-cloud"):
     assert buffer is not None
+    import h5py
     ff = h5py.File(filename, "r")
 
     nx = len(ff["grid/xg"][()])
