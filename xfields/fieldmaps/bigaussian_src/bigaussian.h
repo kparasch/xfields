@@ -1,14 +1,33 @@
 // copyright ################################# //
 // This file is part of the Xfields Package.   //
-// Copyright (c) CERN, 2021.                   //
+// Copyright (c) CERN, 2023.                   //
 // ########################################### //
 
-#ifndef XFIEDLS_BIGUASSIIAN_H
-#define XFIEDLS_BIGUASSIIAN_H
+#ifndef XFIELDS_BIGAUSSIAN_H
+#define XFIELDS_BIGAUSSIAN_H
+
 
 // for quick test with gcc
 #include "constants.h" //only_for_context none
 #include "faddeeva.h" //only_for_context none
+#include "complex_error_function.h" //only_for_context none
+#include "compute_gx_gy.h" //only_for_context none
+//include_file compute_gx_gy.h for_context cpu_serial opencl cuda cpu_openmp
+
+/*gpufun*/
+void get_charge_density(const double x,
+                      const double y,
+                      const double sigma_x,
+                      const double sigma_y,
+                      double* rho)
+{
+
+  // this is a PDF
+  double factor = 1 / (2*PI*sigma_x*sigma_y);
+  double exp_x = exp(-x*x/(2*sigma_x*sigma_x));
+  double exp_y = exp(-y*y/(2*sigma_y*sigma_y));
+  *rho = factor * exp_x * exp_y;  // [m^-2]
+}
 
 /*gpufun*/
 void get_transv_field_gauss_round(
@@ -45,12 +64,11 @@ void get_transv_field_gauss_ellip(
   double abx = fabs(x - Delta_x);
   double aby = fabs(y - Delta_y);
 
-  //printf("x = %.2e y = %.2e abx = %.2e aby = %.2e", xx, yy, abx, aby);
-
   double S, factBE, Ex, Ey;
   double etaBE_re, etaBE_im, zetaBE_re, zetaBE_im;
   double w_etaBE_re, w_etaBE_im, w_zetaBE_re, w_zetaBE_im;
   double expBE;
+
 
   if (sigmax>sigmay){
     S = sqrt(2.*(sigmax*sigmax-sigmay*sigmay));
@@ -64,6 +82,7 @@ void get_transv_field_gauss_ellip(
 
     //w_zetaBE_re, w_zetaBE_im = wfun(zetaBE_re/S, zetaBE_im/S)
     faddeeva_w(zetaBE_re/S, zetaBE_im/S , &(w_zetaBE_re), &(w_zetaBE_im));
+
     //w_etaBE_re, w_etaBE_im = wfun(etaBE_re/S, etaBE_im/S)
     faddeeva_w(etaBE_re/S, etaBE_im/S , &(w_etaBE_re), &(w_etaBE_im));
 
@@ -71,6 +90,7 @@ void get_transv_field_gauss_ellip(
 
     Ex = factBE*(w_zetaBE_im - w_etaBE_im*expBE);
     Ey = factBE*(w_zetaBE_re - w_etaBE_re*expBE);
+
   }
   else if (sigmax<sigmay){
     S = sqrt(2.*(sigmay*sigmay-sigmax*sigmax));
@@ -84,6 +104,7 @@ void get_transv_field_gauss_ellip(
 
     //w_zetaBE_re, w_zetaBE_im = wfun(zetaBE_re/S, zetaBE_im/S)
     faddeeva_w(zetaBE_re/S, zetaBE_im/S , &(w_zetaBE_re), &(w_zetaBE_im));
+
     //w_etaBE_re, w_etaBE_im = wfun(etaBE_re/S, etaBE_im/S)
     faddeeva_w(etaBE_re/S, etaBE_im/S , &(w_etaBE_re), &(w_etaBE_im));
 
@@ -91,10 +112,9 @@ void get_transv_field_gauss_ellip(
 
     Ey = factBE*(w_zetaBE_im - w_etaBE_im*expBE);
     Ex = factBE*(w_zetaBE_re - w_etaBE_re*expBE);
+
   }
   else{
-    //printf("Round beam not implemented!\n");
-    //exit(1);
     Ex = Ey = 0.;
   }
 
@@ -115,10 +135,13 @@ void get_Ex_Ey_gauss(
              double* Ex_ptr,
              double* Ey_ptr){
 
+        // round beam
 	if (fabs(sigma_x-sigma_y)< min_sigma_diff){
 	    double sigma = 0.5*(sigma_x+sigma_y);
 	    	get_transv_field_gauss_round(sigma, 0., 0., x, y, Ex_ptr, Ey_ptr);
 	}
+
+        // elliptical beam
 	else{
 	    get_transv_field_gauss_ellip(
 	            sigma_x, sigma_y, 0., 0., x, y, Ex_ptr, Ey_ptr);
@@ -126,82 +149,4 @@ void get_Ex_Ey_gauss(
 	}
 }
 
-
-/*gpufun*/ void compute_Gx_Gy(
-        const double  x,
-        const double  y,
-        const double  sigma_x,
-        const double  sigma_y,
-        const double  min_sigma_diff,
-        const double  Ex,
-        const double  Ey,
-        double* Gx_ptr,
-        double* Gy_ptr){
-
-    double Gx, Gy;
-
-    if (fabs(sigma_x-sigma_y) < min_sigma_diff){
-        const double sigma = 0.5*(sigma_x+sigma_y);
-	      if ((x*x+y*y)<1e-14){
-            Gx = 1./(8*PI*EPSILON_0*sigma*sigma);
-	          Gy = Gx;
-	      }
-	      else{
-            Gx = 1/(2.*(x*x+y*y))*(y*Ey-x*Ex+1./(2*PI*EPSILON_0*sigma*sigma)
-                                *x*x*exp(-(x*x+y*y)/(2.*sigma*sigma)));
-            Gy = 1./(2*(x*x+y*y))*(x*Ex-y*Ey+1./(2*PI*EPSILON_0*sigma*sigma)
-                                *y*y*exp(-(x*x+y*y)/(2.*sigma*sigma)));
-	       }
-    }
-    else{
-
-        const double Sig_11 = sigma_x*sigma_x;
-        const double Sig_33 = sigma_y*sigma_y;
-
-        Gx =-1./(2*(Sig_11-Sig_33))*(x*Ex+y*Ey+1./(2*PI*EPSILON_0)
-                   *(sigma_y/sigma_x*exp(-x*x/(2*Sig_11)-y*y/(2*Sig_33))-1.));
-        Gy =1./(2*(Sig_11-Sig_33))*(x*Ex+y*Ey+1./(2*PI*EPSILON_0)*
-                      (sigma_x/sigma_y*exp(-x*x/(2*Sig_11)-y*y/(2*Sig_33))-1.));
-
-    }
-
-    *Gx_ptr = Gx;
-    *Gy_ptr = Gy;
-}
-
-#endif
-
-#ifndef NOFIELDMAP
-
-#ifndef XFIEDLS_BIGUASSIIAN_H_FIELDMAP
-#define XFIEDLS_BIGUASSIIAN_H_FIELDMAP
-
-/*gpufun*/
-void BiGaussianFieldMap_get_dphi_dx_dphi_dy(
-           BiGaussianFieldMapData fmap,
-                    const double  x,
-                    const double  y,
-                          double* dphi_dx,
-                          double* dphi_dy){
-
-    const double sigma_x = BiGaussianFieldMapData_get_sigma_x(fmap);
-    const double sigma_y = BiGaussianFieldMapData_get_sigma_y(fmap);
-    const double mean_x = BiGaussianFieldMapData_get_mean_x(fmap);
-    const double mean_y = BiGaussianFieldMapData_get_mean_y(fmap);
-    const double min_sigma_diff = BiGaussianFieldMapData_get_min_sigma_diff(fmap);
-
-    double Ex, Ey;
-    get_Ex_Ey_gauss(
-             x-mean_x,
-             y-mean_y,
-             sigma_x,
-             sigma_y,
-             min_sigma_diff,
-             &Ex,
-             &Ey);
-
-    *dphi_dx = -Ex;
-    *dphi_dy = -Ey;
-}
-#endif
-#endif
+#endif // XFIELDS_BIGAUSSIAN_H

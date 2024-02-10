@@ -7,7 +7,6 @@ import time
 
 import numpy as np
 from matplotlib import pyplot as plt
-from mpi4py import MPI
 import xobjects as xo
 import xtrack as xt
 import xfields as xf
@@ -19,6 +18,7 @@ context = xo.ContextCpu(omp_num_threads=0)
 # Pipeline manager #
 ####################
 if False: # Using MPI
+    from mpi4py import MPI
     comm = MPI.COMM_WORLD
     my_rank   = comm.Get_rank()
     if my_rank > 0:
@@ -38,7 +38,6 @@ pipeline_manager.add_element('IP2')
 
 n_macroparticles = int(1e4)
 bunch_intensity = 2.3e11
-particles_per_macroparticle = bunch_intensity/n_macroparticles
 physemit_x = 2E-6*0.938/7E3
 physemit_y = 2E-6*0.938/7E3
 beta_x_IP1 = 1.0
@@ -68,6 +67,7 @@ particles_b1 = xp.Particles(_context=context,
     py=np.sqrt(physemit_y/beta_y_IP1)*np.random.randn(n_macroparticles),
     zeta=sigma_z*np.random.randn(n_macroparticles),
     delta=sigma_delta*np.random.randn(n_macroparticles),
+    weight=bunch_intensity/n_macroparticles
 )
 particles_b1.init_pipeline('B1b1')
 particles_b2 = xp.Particles(_context=context,
@@ -78,15 +78,14 @@ particles_b2 = xp.Particles(_context=context,
     py=np.sqrt(physemit_y/beta_y_IP1)*np.random.randn(n_macroparticles),
     zeta=sigma_z*np.random.randn(n_macroparticles),
     delta=sigma_delta*np.random.randn(n_macroparticles),
+    weight=bunch_intensity/n_macroparticles
 )
 particles_b2.init_pipeline('B2b1')
 
 #############
 # Beam-beam #
 #############
-nb_slice = 1
-bin_edges = sigma_z*np.linspace(-3.0,3.0,nb_slice+1)
-slicer = xf.TempSlicer(bin_edges = bin_edges)
+slicer = xf.TempSlicer(sigma_z=sigma_z, n_slices=2)
 config_for_update_b1_IP1=xf.ConfigForUpdateBeamBeamBiGaussian3D(
    pipeline_manager=pipeline_manager,
    element_name='IP1',
@@ -120,27 +119,23 @@ bbeamIP1_b1 = xf.BeamBeamBiGaussian3D(
             _context=context,
             other_beam_q0 = particles_b2.q0,
             phi = 500E-6,alpha=0.0,
-            particles_per_macroparticle = particles_per_macroparticle,
             config_for_update = config_for_update_b1_IP1)
 
 bbeamIP2_b1 = xf.BeamBeamBiGaussian3D(
             _context=context,
             other_beam_q0 = particles_b2.q0,
             phi = 500E-6,alpha=np.pi/2,
-            particles_per_macroparticle = particles_per_macroparticle,
             config_for_update = config_for_update_b1_IP2)
 bbeamIP1_b2 = xf.BeamBeamBiGaussian3D(
             _context=context,
             other_beam_q0 = particles_b1.q0,
             phi = 500E-6,alpha=0.0,
-            particles_per_macroparticle = particles_per_macroparticle,
             config_for_update = config_for_update_b2_IP1)
 
 bbeamIP2_b2 = xf.BeamBeamBiGaussian3D(
             _context=context,
             other_beam_q0 = particles_b1.q0,
             phi = 500E-6,alpha=np.pi/2,
-            particles_per_macroparticle = particles_per_macroparticle,
             config_for_update = config_for_update_b2_IP2)
 
 #################################################################
@@ -169,10 +164,10 @@ elements_b1 = [bbeamIP1_b1,arc12,bbeamIP2_b1,arc21]
 elements_b2 = [bbeamIP1_b2,arc12,bbeamIP2_b2,arc21]
 line_b1 = xt.Line(elements=elements_b1)
 line_b2 = xt.Line(elements=elements_b2)
-tracker_b1 = xt.Tracker(line=line_b1)
-tracker_b2 = xt.Tracker(line=line_b2)
-branch_b1 = xt.PipelineBranch(tracker_b1,particles_b1)
-branch_b2 = xt.PipelineBranch(tracker_b2,particles_b2)
+line_b1.build_tracker()
+line_b2.build_tracker()
+branch_b1 = xt.PipelineBranch(line_b1,particles_b1)
+branch_b2 = xt.PipelineBranch(line_b2,particles_b2)
 multitracker = xt.PipelineMultiTracker(branches=[branch_b1,branch_b2])
 
 #################################################################
@@ -191,10 +186,10 @@ print('Done with tracking.',(time.time()-time0)/1024,'[s/turn]')
 if False:
     for i in range(10):
         plt.figure(1000+i)
-        plt.plot(tracker_b1.record_last_track.x[i,:],tracker_b1.record_last_track.px[i,:],'x')
+        plt.plot(line_b1.record_last_track.x[i,:],line_b1.record_last_track.px[i,:],'x')
 
-positions_x_b1 = np.average(tracker_b1.record_last_track.x,axis=0)
-positions_y_b1 = np.average(tracker_b1.record_last_track.y,axis=0)
+positions_x_b1 = np.average(line_b1.record_last_track.x,axis=0)
+positions_y_b1 = np.average(line_b1.record_last_track.y,axis=0)
 plt.figure(0)
 plt.plot(np.arange(nTurn),positions_x_b1/np.sqrt(physemit_x*beta_x_IP1),'x')
 plt.plot(np.arange(nTurn),positions_y_b1/np.sqrt(physemit_y*beta_y_IP1),'x')

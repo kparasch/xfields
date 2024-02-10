@@ -72,9 +72,9 @@ spcharge = SpaceCharge3D(
         y_range=(-y_lim, y_lim),
         z_range=(-z_lim, z_lim),
         nx=256, ny=256, nz=100,
-        solver='FFTSolver2p5D',
+        # solver='FFTSolver2p5D',
+        solver='FFTSolver2p5DAveraged',
         gamma0=particles_dtk.gamma0[0])
-
 
 spcharge.track(particles)
 
@@ -110,7 +110,7 @@ mask_inside_grid = ((np.abs(x_probes)<0.9*x_lim) &
 
 import matplotlib.pyplot as plt
 plt.close('all')
-plt.figure()
+plt.figure(1)
 plt.subplot(211)
 plt.plot(r_probes, p_dtk.px, color='red')
 plt.plot(r_probes, p2np(particles.px[:n_probes]), color='blue',
@@ -119,6 +119,14 @@ plt.subplot(212)
 plt.plot(r_probes, p_dtk.py, color='red')
 plt.plot(r_probes, p2np(particles.py[:n_probes]), color='blue',
         linestyle='--')
+
+plt.figure(2)
+plt.subplot(111)
+tr_profile = spcharge.fieldmap.rho.sum(axis=0)
+for ii in range(tr_profile.shape[1]):
+    tr_profile[:,ii] = tr_profile[:,ii]/tr_profile[:,ii].max()
+tr_profile = context.nparray_from_context_array(tr_profile)
+plt.plot(tr_profile)
 
 ###########
 # Time it #

@@ -77,6 +77,7 @@ class SpaceCharge3D(xt.BeamElement):
 
     _extra_c_sources = [
         _pkg_root.joinpath('headers/constants.h'),
+        _pkg_root.joinpath('headers','particle_states.h'),
         _pkg_root.joinpath('fieldmaps/interpolated_src/linear_interpolators.h'),
         _pkg_root.joinpath('beam_elements/spacecharge_src/spacecharge3d.h'),
     ]
@@ -181,11 +182,6 @@ class SpaceCharge3D(xt.BeamElement):
         # call C tracking kernel
         super().track(particles)
 
-
-
-
-
-
 class SpaceChargeBiGaussian(xt.BeamElement):
 
     _xofields = {
@@ -200,6 +196,7 @@ class SpaceChargeBiGaussian(xt.BeamElement):
         _pkg_root.joinpath('headers/power_n.h'),
         _pkg_root.joinpath('fieldmaps/bigaussian_src/faddeeva.h'),
         _pkg_root.joinpath('fieldmaps/bigaussian_src/bigaussian.h'),
+        _pkg_root.joinpath('fieldmaps/bigaussian_src/bigaussian_fieldmap.h'),
         _pkg_root.joinpath('longitudinal_profiles/qgaussian_src/qgaussian.h'),
         _pkg_root.joinpath('beam_elements/spacecharge_src/spacechargebigaussian.h'),
     ]
@@ -273,10 +270,15 @@ class SpaceChargeBiGaussian(xt.BeamElement):
     def track(self, particles):
 
         if self._update_flag:
+            self.longitudinal_profile.number_of_particles = (
+                (particles.weight * (particles.state > 0)).sum()
+            )
             mean_x, sigma_x = mean_and_std(
-                    particles.x, weights=particles.weight)
+                    particles.x,
+                    weights=particles.weight * (particles.state>0))
             mean_y, sigma_y = mean_and_std(
-                    particles.y, weights=particles.weight)
+                    particles.y,
+                    weights=particles.weight * (particles.state>0))
             if self.update_mean_x_on_track:
                 self.mean_x = mean_x
             if self.update_mean_y_on_track:

@@ -6,26 +6,74 @@
 import numpy as np
 import pandas as pd
 
+from xtrack.progress_indicator import progress
+
 from ..beam_elements.spacecharge import SpaceChargeBiGaussian
 from ..beam_elements.spacecharge import SpaceCharge3D
 
 import xpart as xp
-import xtrack as xt
-from xtrack.line import _is_thick, _is_drift
+import xobjects as xo
 
-def install_spacecharge_frozen(line, particle_ref, longitudinal_profile,
-                               nemitt_x, nemitt_y, sigma_z,
-                               num_spacecharge_interactions,
-                               tol_spacecharge_position,
+def install_spacecharge_frozen(line=None, _buffer=None,
+                               particle_ref=None,
+                               longitudinal_profile=None,
+                               nemitt_x=None, nemitt_y=None, sigma_z=None,
+                               num_spacecharge_interactions=None,
+                               tol_spacecharge_position=None,
                                s_spacecharge=None):
 
-    tracker_no_sc = xt.Tracker(line=line.copy())
+    '''
+    Install spacecharge elements (frozen modeling) in a xtrack.Line object.
+
+    Parameters
+    ----------
+    line : xtrack.Line
+        Line in which the spacecharge elements are installed.
+    particle_ref : xpart.Particles (optional)
+        Reference particle for the spacecharge elements.
+    longitudinal_profile : str
+        Longitudinal profile for the spacecharge elements.
+    nemitt_x : float
+        Normalized emittance in the horizontal plane (in m rad).
+    nemitt_y : float
+        Normalized emittance in the vertical plane (in m rad).
+    sigma_z : float
+        RMS bunch length in meters.
+    num_spacecharge_interactions : int
+        Number of spacecharge interactions to be installed.
+    tol_spacecharge_position : float
+        Tolerance for the spacecharge position.
+    s_spacecharge : np.ndarray (optional)
+        Position of the spacecharge elements.
+
+    Returns
+    -------
+    spacecharge_elements : list
+        List of spacecharge elements.
+    '''
+
+    if _buffer is None:
+        if not line._has_valid_tracker():
+            line.build_tracker(compile=False) # Put everything in the same buffer
+        _buffer = line._buffer
+
+    line.discard_tracker() # as we will be changing element types
+
+    if tol_spacecharge_position is not None:
+        raise NotImplementedError('tol_spacecharge_position not implemented')
+
+    if particle_ref is None:
+        particle_ref = line.particle_ref
+        assert particle_ref is not None
+
+    line_no_sc = line.copy(_context=xo.ContextCpu())
+    line_no_sc.build_tracker()
 
     # Make a matched bunch just to get the matched momentum spread
     bunch = xp.generate_matched_gaussian_bunch(
              num_particles=int(2e6), total_intensity_particles=1.,
              nemitt_x=nemitt_x, nemitt_y=nemitt_y, sigma_z=sigma_z,
-             particle_ref=particle_ref, tracker=tracker_no_sc)
+             particle_ref=particle_ref, line=line_no_sc)
     delta_rms = np.std(bunch.delta)
 
     # Generate spacecharge positions
@@ -36,8 +84,14 @@ def install_spacecharge_frozen(line, particle_ref, longitudinal_profile,
     # Create spacecharge elements (dummy)
     sc_elements = []
     sc_names = []
-    for ii, ss in enumerate(s_spacecharge):
+    insertions = []
+    for ii in progress(range(len(s_spacecharge)),
+                           desc='Creating spacecharge elements'):
+
+        ss = s_spacecharge[ii]
+
         sc_elements.append(SpaceChargeBiGaussian(
+            _buffer=_buffer,
             length=-9999,
             apply_z_kick=False,
             longitudinal_profile=longitudinal_profile,
@@ -47,23 +101,23 @@ def install_spacecharge_frozen(line, particle_ref, longitudinal_profile,
             sigma_y=1.))
         sc_names.append(f'spacecharge_{ii}')
 
-        #TODO Replace loop with single insert_element when available in xtrack
-        line.insert_element(name=sc_names[-1], element=sc_elements[-1],
-                            at_s=ss, s_tol=tol_spacecharge_position)
+        insertions.append((ss, [(sc_names[-1], sc_elements[-1])]))
 
+    # Insert spacecharge elements
+    line._insert_thin_elements_at_s(insertions)
 
     actual_s_spch = line.get_s_position(sc_names)
 
     sc_lengths = 0*s_spacecharge
     sc_lengths[:-1] = np.diff(actual_s_spch)
-    sc_lengths[-1] = line.get_length() - np.sum(sc_lengths[:-1]) 
+    sc_lengths[-1] = line.get_length() - np.sum(sc_lengths[:-1])
 
     # Twiss at spacecharge
-    line_sc_off = line.filter_elements(exclude_types_starting_with='SpaceCh')
-    tracker_sc_off = xt.Tracker(line=line_sc_off,
-            element_classes=tracker_no_sc.element_classes,
-            track_kernel=tracker_no_sc.track_kernel)
-    tw_at_sc = tracker_sc_off.twiss(particle_ref=particle_ref, at_elements=sc_names)
+    line_sc_off = line.copy(_context=xo.ContextCpu()).filter_elements(
+                                           exclude_types_starting_with='SpaceCh')
+    line_sc_off.build_tracker(
+            track_kernel=line_no_sc.tracker.track_kernel)
+    tw_at_sc = line_sc_off.twiss(particle_ref=particle_ref, at_elements=sc_names)
 
     # Configure lenses
     for ii, sc in enumerate(sc_elements):
@@ -79,11 +133,42 @@ def install_spacecharge_frozen(line, particle_ref, longitudinal_profile,
 
 
 def replace_spacecharge_with_quasi_frozen(
-                        line, _buffer,
+                        line, _buffer=None,
                         update_mean_x_on_track=True,
                         update_mean_y_on_track=True,
                         update_sigma_x_on_track=True,
                         update_sigma_y_on_track=True):
+
+    '''
+    Replace spacecharge elements with quasi-frozen spacecharge elements.
+
+    Parameters
+    ----------
+    line : xtrack.Line
+        Line in which the spacecharge elements are replaced.
+    _buffer : xtrack.Buffer
+        Buffer used allocate the spacecharge elements.
+    update_mean_x_on_track : bool (optional)
+        Update the mean x position on track.
+    update_mean_y_on_track : bool (optional)
+        Update the mean y position on track.
+    update_sigma_x_on_track : bool (optional)
+        Update the sigma x position on track.
+    update_sigma_y_on_track : bool (optional)
+        Update the sigma y position on track.
+
+    Returns
+    -------
+    spacecharge_elements : list
+        List of spacecharge elements.
+    '''
+
+    if _buffer is None:
+        if not line._has_valid_tracker():
+            line.build_tracker(compile=False) # Put everything in the same buffer
+        _buffer = line._buffer
+
+    line.discard_tracker() # as we will be changing element types
 
     spch_elements = []
     for ii, ee in enumerate(line.elements):
@@ -173,8 +258,51 @@ def replace_spacecharge_with_PIC(
         line,
         n_sigmas_range_pic_x, n_sigmas_range_pic_y,
         nx_grid, ny_grid, nz_grid, n_lims_x, n_lims_y, z_range,
+        solver='FFTSolver2p5D',
         _context=None,
         _buffer=None):
+
+    '''
+    Replace spacecharge elements with Particle In Cell (PIC) elements.
+
+    Parameters
+    ----------
+    line : xtrack.Line
+        Line in which the spacecharge elements are replaced.
+    n_sigmas_range_pic_x : float
+        Extent of the PIC grid in the horizontal direction in units beam sigmas.
+    n_sigmas_range_pic_y : float
+        Extent of the PIC grid in the vertical direction in units beam sigmas.
+    nx_grid : int
+        Number of grid points in the horizontal direction.
+    ny_grid : int
+        Number of grid points in the vertical direction.
+    nz_grid : int
+        Number of grid points in the longitudinal direction.
+    n_lims_x : int
+        Number different limits in x for which PIC need to be generated.
+    n_lims_y : int
+        Number different limits in y for which PIC need to be generated.
+    z_range : float
+        Range of the longitudinal grid.
+    _context : xtrack.Context (optional)
+        Context in which the PIC elements are created.
+    _buffer : xtrack.Buffer (optional)
+        Buffer in which the PIC elements are created.
+
+    Returns
+    -------
+    pic_collection : xfields.PICCollection
+        Collection of PIC elements.
+    all_pics: list
+        List of all PIC elements.
+    '''
+    if _buffer is None and _context is None:
+        if not line._has_valid_tracker():
+            line.build_tracker(compile=False) # Put everything in the same buffer
+        _buffer = line._buffer
+
+    line.discard_tracker()
 
     all_sc_elems = []
     name_sc_elems = []
@@ -198,7 +326,8 @@ def replace_spacecharge_with_PIC(
         nx_grid=nx_grid, ny_grid=ny_grid, nz_grid=nz_grid,
         x_lim_min=x_lim_min, x_lim_max=x_lim_max, n_lims_x=n_lims_x,
         y_lim_min=y_lim_min, y_lim_max=y_lim_max, n_lims_y=n_lims_y,
-        z_range=z_range)
+        z_range=z_range,
+        solver=solver)
 
     all_pics = []
     for nn, ee in zip(name_sc_elems, all_sc_elems):
